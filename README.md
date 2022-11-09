@@ -1,5 +1,9 @@
 # RSNA 2022 Cervical Spine Fracture Detection
 
+## Solution Summary
+Detailed writeup: https://docs.google.com/document/d/1GcHeUDks2dnECKmJn97nF2djFRTVVnGpORFpUH0nMuU/edit?usp=sharing
+Kaggle post: https://www.kaggle.com/competitions/rsna-2022-cervical-spine-fracture-detection/discussion/362651
+
 ## Hardware
 Ubuntu 20.04 
 
