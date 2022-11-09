@@ -1,0 +1,92 @@
+experiment:
+  seed: 88
+  save_dir: ../experiments/
+
+
+data:
+  annotations: ../data/train_cas_kfold_all_by_level.csv
+  data_dir: ../data/train-cropped-cspine-pngs/
+  input: filename
+  target: fracture_cas
+  outer_fold: 0
+  dataset:
+    name: ImageDataset
+    params:
+      flip: true
+      transpose: true
+      invert: false
+      channels: grayscale
+
+
+transform:
+  resize:
+    name: resize_ignore
+    params:
+      imsize: [288, 288]
+  augment:
+    name: rand_augment
+    params:
+      n: 3
+      p: 0.95
+      spatial_only: true
+      dropout: false
+  crop:
+    null
+  preprocess:
+    name: Preprocessor
+    params:
+      image_range: [0, 255]
+      input_range: [0, 1]
+      mean: [0.5]
+      sdev: [0.5]
+
+
+task:
+  name: ClassificationTask
+  params:
+
+
+model:
+  name: Net2D
+  params:
+    backbone: tf_efficientnetv2_s
+    pretrained: true
+    num_classes: 1
+    dropout: 0.2
+    multisample_dropout: true
+    feature_reduction: 256
+    pool: gem
+    in_channels: 1
+
+
+loss:
+  name: BCEWithLogitsLoss
+  params:
+    pos_weight: 2.0
+
+
+optimizer:
+  name: AdamW
+  params:
+    lr: 3.0e-4
+    weight_decay: 5.0e-4
+
+
+scheduler:
+  name: CosineAnnealingLR
+  params:
+    final_lr: 1.0e-6
+
+
+train:
+  batch_size: 32
+  num_epochs: 2
+
+
+evaluate:
+  metrics: [AUROC]
+  monitor: auc_mean
+  mode: max
+
+
+

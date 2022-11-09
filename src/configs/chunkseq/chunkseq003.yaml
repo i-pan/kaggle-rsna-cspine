@@ -1,0 +1,67 @@
+experiment:
+  seed: 88
+  save_dir: ../experiments/
+
+
+data:
+  annotations: ../data/train_chunk_features_kfold.csv
+  data_dir: ../data/train-chunk000-features/foldx
+  input: filename
+  target: [C1, C2, C3, C4, C5, C6, C7, patient_overall]
+  outer_fold: 0
+  dataset:
+    name: FeatureDataset
+    params:
+      seq_len: 7
+      reverse: false
+      normalize: false
+      exam_level_label: true
+
+
+task:
+  name: ClassificationTask
+  params:
+
+
+model:
+  name: DualTransformer
+  params:
+    num_classes: 1
+    embedding_dim: 432
+    hidden_dim: 864
+    n_layers: 3
+    n_heads: 16
+
+
+loss:
+  name: MultilabelWeightedBCE
+  params:
+    weights: [1, 1, 1, 1, 1, 1, 1, 7]
+    pos_weight: 2.0
+
+
+optimizer:
+  name: AdamW
+  params:
+    lr: 1.0e-5
+    weight_decay: 5.0e-4
+
+
+scheduler:
+  name: CosineAnnealingLR
+  params:
+    final_lr: 0
+
+
+train:
+  batch_size: 32
+  num_epochs: 25
+
+
+evaluate:
+  batch_size: 1
+  metrics: [CompetitionMetric, AUROC]
+  monitor: comp_metric
+  mode: min
+
+

@@ -1,0 +1,89 @@
+experiment:
+  seed: 88
+  save_dir: ../experiments/
+
+
+data:
+  annotations: ../data/train_vertebra_chunks_kfold.csv
+  data_dir: ../data/train-numpy-vertebra-chunks
+  input: filename
+  target: fracture
+  outer_fold: 0
+  dataset:
+    name: NumpyChunkDataset
+    params:
+      flip: true
+      invert: false
+      channels: grayscale
+      z_lt: resample_resample
+      z_gt: resample_resample
+      num_images: 64
+
+
+transform:
+  resize:
+    name: resize_ignore_3d
+    params:
+      imsize: [64, 288, 288]
+  augment:
+    null
+  crop:
+    null
+  preprocess:
+    name: Preprocessor
+    params:
+      image_range: [0, 255]
+      input_range: [0, 1]
+      mean: [0.5]
+      sdev: [0.5]
+
+
+task:
+  name: ClassificationTask
+  params:
+
+
+model:
+  name: Net3D
+  params:
+    backbone: x3d_l
+    backbone_params:
+      z_strides: [1, 1, 1, 1, 1]
+    pretrained: true
+    num_classes: 1
+    dropout: 0.2
+    pool: avg
+    in_channels: 1
+    multisample_dropout: true
+
+
+loss:
+  name: BCEWithLogitsLoss
+  params:
+
+
+optimizer:
+  name: AdamW
+  params:
+    lr: 3.0e-4
+    weight_decay: 5.0e-4
+
+
+scheduler:
+  name: CosineAnnealingLR
+  params:
+    final_lr: 0.0
+
+
+train:
+  batch_size: 4
+  num_epochs: 10
+
+
+evaluate:
+  metrics: [AUROC]
+  monitor: auc_mean
+  mode: max
+
+
+
