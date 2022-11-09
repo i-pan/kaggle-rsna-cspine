@@ -2,8 +2,11 @@
 
 ## Hardware
 Ubuntu 20.04 
+
 8-core Intel processor
+
 64 GB RAM
+
 2 NVIDIA RTX 3090 GPUs with 24 GB VRAM
 
 ## Environment
