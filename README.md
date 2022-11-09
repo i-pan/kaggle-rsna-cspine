@@ -1,120 +1,97 @@
-import argparse
-import os, os.path as osp
-import torch
-import pytorch_lightning as pl
+# RSNA 2022 Cervical Spine Fracture Detection
 
-from omegaconf import OmegaConf
+## Hardware
+Ubuntu 20.04 
+8-core Intel processor
+64 GB RAM
+2 NVIDIA RTX 3090 GPUs with 24 GB VRAM
 
-from skp.controls import datamaker, training, inference
+## Environment
+```
+bash src/environment.sh
+conda activate skp
+```
 
+## Download Data
+```
+mkdir data
+cd data
+kaggle competitions download -c rsna-2022-cervical-spine-fracture-detection
+```
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("mode", type=str)
-    parser.add_argument("config", type=str)
-    parser.add_argument("--num-workers", type=int, default=1)
-    parser.add_argument("--kfold", type=int, default=-1)
-    parser.add_argument("--seed", type=int, default=-1)
+Unzip the files. 
 
-    parser.add_argument("--inference-checkpoint", type=str)
-    parser.add_argument("--inference-data-dir", type=str)
-    parser.add_argument("--inference-imgfiles", type=str)
-    parser.add_argument("--inference-act-fn", type=str, default=None)
-    parser.add_argument("--inference-tta", type=str, default=None)
-    parser.add_argument("--inference-cpu", type=str)
-    parser.add_argument("--inference-save", type=str)
-    parser.add_argument("--inference-cam-class", type=int)
+## Initial Setup
+From `src/etl`:
+```
+python 00_extract_metadata.py
+python 01_convert_to_png.py
+python 02_convert_nifti_to_numpy.py
+python 03_generate_whole_seg_192x192x192_numpy.py
+python 04_create_cv_splits.py
+python 05_create_cv_splits_for_whole_cspine_segmentation.py
+```
 
-    parser.add_argument("--offline", action="store_true", help="run wandb in offline mode")
-    parser.add_argument("--group-by-seed", action="store_true", help="group models by seed")
+## Train Segmentation Models
+From `src`:
+```
+bash ./train_segmentation_models.sh 
+```
 
-    parser.add_argument("--debug", action="store_true")
+## Generate Pseudo-segmentations
+From `src/etl`:
+```
+python 06_pseudosegmentations_for_studies.py
+python 07_add_pseudosegmentations_to_training.py
+```
 
-    parser = pl.Trainer.add_argparse_args(parser)
+## Retrain Segmentation Models
+From `src`:
+```
+bash ./retrain_segmentation_models.sh
+```
 
-    return parser.parse_args()
+## Crop Vertebra
+From `src/etl`:
+```
+python 08_vertebra_locations_for_each_level.py
+python 09_create_3d_chunk_for_each_vertebra.py
+```
 
+## Train 3D CNN Vertebra-level Classification Models
+From `src`:
+```
+bash ./train_x3d_classifiers.sh
+```
 
-def update(d, u):
-    for k, v in u.items():
-        if isinstance(v, collections.abc.Mapping):
-            d[k] = update(d.get(k, {}), v)
-        else:
-            d[k] = v
-    return d
+## Generate Slice-level Pseudo-labels
+From `src/etl`:
+```
+python 10_get_cas.py
+python 11_get_cas_pseudolabels.py
+python 12_get_cropped_pngs.py
+```
 
+## Train TD CNN Classification Models
+From `src`:
+```
+bash ./train_tdcnn_classifiers.py
+```
 
-def read_config(cfgfile):
-    cfg = OmegaConf.load(cfgfile)
-    while "base" in cfg:
-        base_cfg = cfg.pop("base")
-        cfg = update(OmegaConf.load(base_cfg), cfg)
-    return cfg
+## Extract Features
+From `src/etl`:
+```
+python 13_extract_chunk_features_x3d.py
+python 14_extract_chunk_features_tdcnn.py
+python 15_fuse_features.py
+```
 
+## Train Final Sequence Models
+From `src`:
+```
+bash ./train_sequence_models.py
+```
 
-def main(args):
-    # Print some info ...
-    print('PyTorch environment ...')
-    print(f'  torch.__version__              = {torch.__version__}')
-    print(f'  torch.version.cuda             = {torch.version.cuda}')
-    print(f'  torch.backends.cudnn.version() = {torch.backends.cudnn.version()}')
-    print('\n')
+## Inference 
+See Kaggle notebook: https://www.kaggle.com/code/vaillant/rsna-c-spine-submission?scriptVersionId=108890272
 
-    # Load config
-    cfg = read_config(args.config)
-
-    # Set seed, if specified in command line
-    if args.seed >= 0:
-        cfg.experiment.seed = args.seed
-
-    # Set strategy in config using command line
-    cfg.strategy = args.strategy
-
-    # Handle experiment name
-    cfg.experiment.project = osp.basename(osp.dirname(os.getcwd()))
-    cfg.experiment.name = osp.basename(args.config).replace('.yaml', '')
-
-    print(f"=== PROJECT <{cfg.experiment.project}> ===")
-    print(f'Running experiment {cfg.experiment.name} ...')
-
-    # If using SyncBatchNorm, create subfolder
-    if args.sync_batchnorm:
-        cfg.experiment.name = osp.join(cfg.experiment.name, 'sbn')
-
-    # If running K-fold, change seed and save directory
-    # Also need to edit folds in data
-    if args.kfold >= 0:
-        cfg.experiment.seed = int(f'{cfg.experiment.seed}{args.kfold}')
-        if isinstance(cfg.data.get("inner_fold"), (int, float)):
-            print("Command line K-fold training only supports single outer loop ...")
-            print(f"Inner fold currently set to {cfg.data.inner_fold} ...")
-            print("Setting to `None` ...")
-            cfg.data.inner_fold = None
-        if cfg.data.outer_fold != args.kfold:
-            print(f"Outer fold currently set to {cfg.data.outer_fold} ...")
-            print(f"Changing to {args.kfold} ...")
-        cfg.data.outer_fold = args.kfold
-
-    if args.mode != "train":
-        cfg.experiment.save_dir = osp.join(cfg.experiment.save_dir, args.mode)
-
-    print(f'Saving checkpoints and logs to {cfg.experiment.save_dir} ...')
-
-    # Set number of workers
-    if cfg.data:
-        cfg.data.num_workers = args.num_workers
-
-        # Set seed
-    assert hasattr(cfg.experiment, 'seed'), \
-        'Please specify `seed` under `experiment` in config file or in command line'
-    seed = pl.seed_everything(cfg.experiment.seed)
-
-    if args.mode in ["train"]:
-        getattr(training, args.mode)(cfg, args)
-    else:
-        getattr(inference, args.mode)(cfg, args)
-
-
-if __name__ == '__main__':
-    args = parse_args()
-    main(args)
